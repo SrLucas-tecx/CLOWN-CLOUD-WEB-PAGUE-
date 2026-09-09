@@ -30,11 +30,13 @@
       <div class="nav-group-label">Ventas</div>
       <button class="nav-item active" data-page="cotizador">🧮 Cotizador rápido</button>
       <button class="nav-item" data-page="cotizaciones">📁 Cotizaciones guardadas</button>
+      <button class="nav-item" data-page="clientes">👤 Clientes</button>
 
       <div class="nav-group-label">Inventario</div>
-      <button class="nav-item" data-page="nuevo">🆕 Producto nuevo</button>
       <button class="nav-item" data-page="pin">📌 Pines</button>
       <button class="nav-item" data-page="sticker">✂️ Stickers</button>
+      <button class="nav-item" data-page="otro">🎁 Otros productos</button>
+      <button class="nav-item" data-page="nuevo">🆕 Producto nuevo (otros)</button>
 
       <div class="nav-group-label">Catálogo</div>
       <button class="nav-item" data-page="etiquetas">🏷️ Etiquetas y colores</button>
@@ -96,10 +98,19 @@
         </div>
 
         <div class="quote-meta-card">
+          <div class="card-top" style="margin-bottom:var(--space-4);">
+            <div>
+              <span class="card-title">Cotización <span id="q-folio">#0001</span></span>
+              <div class="card-meta"><span>CLOWN CLOUD · Pines y Stickers</span></div>
+            </div>
+          </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Cliente / Pedido</label>
-              <input type="text" class="form-input" id="q-cliente" placeholder="Nombre del cliente o pedido">
+              <label class="form-label">Cliente</label>
+              <div style="display:flex;gap:8px;">
+                <select class="form-select" id="q-cliente"></select>
+                <button type="button" class="btn-secondary btn-sm" id="q-cliente-add" title="Agregar cliente nuevo">＋</button>
+              </div>
             </div>
             <div class="form-group">
               <label class="form-label">Fecha</label>
@@ -183,26 +194,45 @@
         <div id="cotizaciones-list" class="cards-grid"></div>
       </section>
 
+      <!-- ============================ CLIENTES ============================ -->
+      <section class="page-section" id="page-clientes">
+        <div class="section-header">
+          <div>
+            <div class="section-title">👤 Clientes</div>
+            <div class="section-sub">Tu cartera de clientes, lista para usarse en cualquier cotización.</div>
+          </div>
+          <div>
+            <button class="btn-primary" id="cliente-add-btn">＋ Nuevo cliente</button>
+          </div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Cliente</th><th>Teléfono</th><th>Cotizaciones</th><th></th></tr></thead>
+            <tbody id="clientes-body"></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- ============================ PRODUCTO NUEVO ============================ -->
       <section class="page-section" id="page-nuevo">
         <div class="new-product-hero">
-          <h2>🆕 Agrega un producto nuevo</h2>
-          <div class="section-sub">Registra el pin o sticker con su estado, fecha de compra y, si ya se vendió, sus ingresos.</div>
-        </div>
-
-        <div class="type-toggle" id="np-type-toggle">
-          <button class="type-toggle-btn active" data-tipo="pin">📌 Es un Pin</button>
-          <button class="type-toggle-btn" data-tipo="sticker">✂️ Es un Sticker</button>
+          <h2>🆕 Agrega un producto nuevo (fuera de pines y stickers)</h2>
+          <div class="section-sub">Para mercancía que no es pin ni sticker — figuras, mangas, llaveros, peluches, etc. Escribe su categoría, estado, fecha de compra y, si ya se vendió, sus ingresos. (Para pines o stickers usa el botón "＋ Nuevo" dentro de esas secciones.)</div>
         </div>
 
         <form id="np-form">
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Nombre del producto</label>
-              <input type="text" class="form-input" id="np-nombre" required placeholder="Ej. Payasito Nube">
+              <input type="text" class="form-input" id="np-nombre" required placeholder="Ej. Figura Chainsaw Man">
             </div>
             <div class="form-group">
-              <label class="form-label">Etiqueta / Categoría</label>
+              <label class="form-label">Categoría (libre)</label>
+              <input type="text" class="form-input" id="np-categoria" list="np-categoria-list" placeholder="Ej. Figura, Manga, Llavero...">
+              <datalist id="np-categoria-list"></datalist>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Etiqueta del catálogo</label>
               <select class="form-select" id="np-etiqueta"></select>
             </div>
           </div>
@@ -308,6 +338,27 @@
         <div id="grid-sticker" class="cards-grid"></div>
       </section>
 
+      <!-- ============================ INVENTARIO: OTROS PRODUCTOS ============================ -->
+      <section class="page-section" id="page-otro">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🎁 Otros productos</div>
+            <div class="section-sub">Figuras, mangas y cualquier producto fuera de pines y stickers.</div>
+          </div>
+          <div>
+            <button class="btn-primary" data-add-tipo="otro">＋ Nuevo producto</button>
+          </div>
+        </div>
+        <div class="filter-bar" id="filter-otro-estado">
+          <button class="filter-chip active" data-estado="todos">Todos</button>
+          <button class="filter-chip" data-estado="inventario">En inventario</button>
+          <button class="filter-chip" data-estado="vendido">Vendidos</button>
+          <button class="filter-chip" data-estado="agotado">Agotados</button>
+        </div>
+        <div class="filter-bar" id="filter-otro-categoria"></div>
+        <div id="grid-otro" class="cards-grid"></div>
+      </section>
+
       <!-- ============================ ETIQUETAS Y COLORES ============================ -->
       <section class="page-section" id="page-etiquetas">
         <div class="section-header">
@@ -353,11 +404,21 @@
 
       <!-- ============================ ESTADÍSTICAS ============================ -->
       <section class="page-section" id="page-estadisticas">
-        <div class="section-header">
-          <div>
-            <div class="section-title">📊 Estadísticas</div>
-            <div class="section-sub">Resumen de tu inventario e ingresos.</div>
+        <div class="metrics-guide">
+          <div class="metrics-guide-heading">
+            <div>
+              <span class="metrics-guide-kicker">Guía rápida</span>
+              <h2 class="section-title">¿Qué combinaciones de métricas te conviene mirar?</h2>
+              <p class="section-sub">Un producto "ganador" no es solo el que más se vende, sino el que también deja más margen.</p>
+            </div>
+            <span class="metrics-guide-icon">↗</span>
           </div>
+          <div class="metrics-guide-steps">
+            <div class="metrics-guide-step"><b>1. Mide la demanda</b><span>Revisa qué etiquetas, colores o tipos de producto se venden más.</span></div>
+            <div class="metrics-guide-step"><b>2. Mide el margen</b><span>Compara la ganancia real, no solo el precio de venta.</span></div>
+            <div class="metrics-guide-step"><b>3. Decide qué reponer</b><span>Repite lo que vende bien Y deja margen; ajusta o pausa lo demás.</span></div>
+          </div>
+          <p class="metrics-guide-tip"><b>Tip:</b> empieza con "Etiqueta + ganancia" y "Bazar + ingresos" — son las combinaciones que mejor predicen qué producir y dónde vender. Usa "+ Agregar gráfica" para guardar tus propias combinaciones.</p>
         </div>
 
         <div class="stat-row">
@@ -383,20 +444,54 @@
           </div>
         </div>
 
-        <div class="charts-grid">
-          <div class="chart-card">
-            <h3>Ingresos por mes</h3>
-            <canvas id="chart-ingresos" class="chart-canvas"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Inventario vs. Vendido vs. Agotado</h3>
-            <canvas id="chart-estado" class="chart-canvas"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Pines vs. Stickers vendidos</h3>
-            <canvas id="chart-tipo" class="chart-canvas"></canvas>
+        <div class="section-header">
+          <div>
+            <div class="section-title" style="font-size:var(--fs-md);">Combinaciones útiles</div>
+            <div class="section-sub">Elige una combinación para descubrir qué conviene producir o llevar al próximo bazar.</div>
           </div>
         </div>
+        <div class="metrics-combinations-layout">
+          <div id="recommended-combinations" class="recommended-combinations"></div>
+          <div class="recommended-chart-card">
+            <div class="recommended-chart-heading">
+              <div>
+                <span class="metrics-guide-kicker">Comparación seleccionada</span>
+                <h3 class="section-title" id="recommended-chart-title" style="font-size:var(--fs-md);">Etiqueta + ganancia</h3>
+                <p class="section-sub" id="recommended-chart-description">Identifica las etiquetas que dejan más ganancia.</p>
+              </div>
+              <div class="recommended-chart-tools">
+                <label class="form-label" for="recommended-chart-type">Tipo</label>
+                <select id="recommended-chart-type" class="form-select">
+                  <option value="bar">Barras</option>
+                  <option value="line">Línea</option>
+                  <option value="doughnut">Dona</option>
+                  <option value="pie">Pastel</option>
+                </select>
+                <label class="form-label" for="recommended-chart-palette">Paleta</label>
+                <select id="recommended-chart-palette" class="form-select">
+                  <option value="verde">Verde esmeralda</option>
+                  <option value="lavanda">Azul lavanda</option>
+                  <option value="rojizo">Rojizo</option>
+                </select>
+                <button class="btn-secondary" id="recommended-chart-apply">Aplicar estilo</button>
+              </div>
+            </div>
+            <canvas id="recommended-chart" class="recommended-chart-canvas"></canvas>
+            <p class="empty-hint" id="recommended-chart-empty" style="display:none;">Aún no hay datos suficientes para esta combinación.</p>
+          </div>
+        </div>
+
+        <div class="section-header" style="justify-content:space-between;">
+          <div>
+            <div class="section-title" style="font-size:var(--fs-md);">Mis gráficas</div>
+            <div class="section-sub">Crea gráficas personalizadas con tus propios datos.</div>
+          </div>
+          <div>
+            <button class="btn-primary" id="grafica-add-btn">＋ Agregar gráfica</button>
+          </div>
+        </div>
+        <div id="custom-charts-grid" class="cards-grid"></div>
+        <p class="empty-hint" id="custom-charts-empty">Todavía no tienes gráficas personalizadas.</p>
       </section>
 
       <!-- ============================ AJUSTES DE COSTOS ============================ -->
@@ -454,9 +549,14 @@
           <input type="text" class="form-input" id="pm-nombre">
         </div>
         <div class="form-group">
-          <label class="form-label">Etiqueta / Categoría</label>
+          <label class="form-label">Etiqueta del catálogo</label>
           <select class="form-select" id="pm-etiqueta"></select>
         </div>
+      </div>
+      <div class="form-group" id="pm-categoria-group" style="display:none;">
+        <label class="form-label">Categoría (libre)</label>
+        <input type="text" class="form-input" id="pm-categoria" list="pm-categoria-list" placeholder="Ej. Figura, Manga, Llavero...">
+        <datalist id="pm-categoria-list"></datalist>
       </div>
       <div class="form-group">
         <label class="form-label">Color</label>
@@ -543,6 +643,96 @@
     <div class="modal-footer">
       <button class="btn-secondary" data-close-modal="bazar-modal">Cancelar</button>
       <button class="btn-primary" id="bm-save-btn">Guardar bazar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ MODAL: CLIENTE ============================ -->
+<div class="modal-overlay" id="cliente-modal">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <span class="modal-title" id="cm-title">Nuevo cliente</span>
+      <button class="modal-close" data-close-modal="cliente-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input type="text" class="form-input" id="cm-nombre">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Teléfono</label>
+        <input type="text" class="form-input" id="cm-telefono">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas</label>
+        <textarea class="form-textarea" id="cm-notas"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="cm-delete-btn" style="display:none;">🗑️ Eliminar</button>
+      <button class="btn-secondary" data-close-modal="cliente-modal">Cancelar</button>
+      <button class="btn-primary" id="cm-save-btn">Guardar cliente</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ MODAL: GRÁFICA PERSONALIZADA ============================ -->
+<div class="modal-overlay" id="grafica-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="gm-title">Nueva gráfica</span>
+      <button class="modal-close" data-close-modal="grafica-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Título</label>
+        <input type="text" class="form-input" id="gm-titulo" placeholder="Ej. Ganancia por etiqueta">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Fuente de datos</label>
+          <select class="form-select" id="gm-fuente">
+            <option value="inventario">Inventario (pines, stickers, otros)</option>
+            <option value="bazares">Bazares</option>
+            <option value="tipo-producto">Tipo de producto</option>
+            <option value="estado">Estado del inventario</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tipo de gráfica</label>
+          <select class="form-select" id="gm-tipo">
+            <option value="bar">Barras</option>
+            <option value="line">Línea</option>
+            <option value="doughnut">Dona</option>
+            <option value="pie">Pastel</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" id="gm-inventario-options">
+        <div class="form-group">
+          <label class="form-label">Agrupar por</label>
+          <select class="form-select" id="gm-dimension">
+            <option value="etiqueta">Etiqueta</option>
+            <option value="color">Color</option>
+            <option value="tipo">Tipo de producto</option>
+            <option value="categoria">Categoría (otros)</option>
+            <option value="estado">Estado</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Métrica</label>
+          <select class="form-select" id="gm-metrica">
+            <option value="stock">Piezas en stock</option>
+            <option value="costo">Costo ($)</option>
+            <option value="ingresos">Ingresos ($)</option>
+            <option value="ganancia">Ganancia ($)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close-modal="grafica-modal">Cancelar</button>
+      <button class="btn-primary" id="gm-save-btn">Guardar gráfica</button>
     </div>
   </div>
 </div>

@@ -6,8 +6,9 @@
      sección nueva solo hace falta: botón .nav-item + <section
      class="page-section"> en el HTML + una entrada aquí.
    - PRODUCT_TYPES: para agregar un tipo de producto nuevo (ej.
-     "llavero") solo se agrega aquí y su nav+section en el HTML;
-     todo el CRUD de inventario ya es genérico.
+     "llavero" como categoría propia) solo se agrega aquí y su
+     nav+section en el HTML; el tipo "otro" ya admite cualquier
+     categoría libre (figuras, mangas, etc.) sin tocar el código.
    ============================================================ */
 
 const STORAGE_KEY = 'clowncloud_db_v1';
@@ -18,10 +19,16 @@ const BRAND_COLORS = [
   '#2B2B2B','#049459','#468AC9','#8E98DD','#3A200F','#5E3C19',
   '#EFD9C4','#BBB8BF','#918BB7','#000000'
 ];
+const CHART_PALETTES = {
+  verde:   ['#049459','#036f43','#8E98DD','#F4B903','#C34804','#918BB7'],
+  lavanda: ['#8E98DD','#918BB7','#049459','#468AC9','#A263CB','#C34804'],
+  rojizo:  ['#C34804','#ED5399','#F4B903','#049459','#8E98DD','#3A200F']
+};
 
 const PRODUCT_TYPES = {
   pin:     { label: 'Pines',    singular: 'Pin',     icon: '📌' },
-  sticker: { label: 'Stickers', singular: 'Sticker', icon: '✂️' }
+  sticker: { label: 'Stickers', singular: 'Sticker', icon: '✂️' },
+  otro:    { label: 'Otros productos', singular: 'Producto', icon: '🎁', freeCategory: true }
 };
 
 const ESTADOS = {
@@ -33,26 +40,33 @@ const ESTADOS = {
 /* ---------------- ESTADO ---------------- */
 let DB = loadDB();
 let currentPage = 'cotizador';
-let currentQuote = { items: [], costs: [] };
+let currentQuote = { items: [], costs: [], clienteId: null };
 let confirmCallback = null;
-let npSelectedTipo = 'pin';
 let npSelectedColor = BRAND_COLORS[0];
 let pmSelectedColor = BRAND_COLORS[0];
 let pmEditingId = null;
 let bmEditingId = null;
-let inventoryFilters = { pin: 'todos', sticker: 'todos' };
+let cmEditingId = null;
+let gmEditingId = null;
+let quickAddFromQuote = false;
+let inventoryFilters = { pin: 'todos', sticker: 'todos', otro: 'todos' };
+let otroCategoriaFilter = 'todas';
 
 function defaultDB(){
   return {
-    productos: [],      // {id, tipo, nombre, etiquetaId, color, cantidad, costoCompra, precioVenta, estado, fechaCompra, fechaVenta, bazarVentaId, ingresoExtra, notas}
-    cotizaciones: [],    // {id, cliente, fecha, bazarId, items:[], costs:[], totalCosto, totalPrecio, ganancia}
+    productos: [],      // {id, tipo, nombre, etiquetaId, categoriaLibre, color, cantidad, costoCompra, precioVenta, estado, fechaCompra, fechaVenta, bazarVentaId, ingresoExtra, notas}
+    cotizaciones: [],    // {id, folio, clienteId, fecha, bazarId, items:[], costs:[], totalCosto, totalPrecio, ganancia}
+    clientes: [],        // {id, nombre, telefono, notas}
     etiquetas: [
-      { id: uid(), nombre: 'Colección Circo', color: '#FB6204' },
-      { id: uid(), nombre: 'Kawaii',           color: '#E988B3' }
+      { id: uid(), nombre: 'Colección Circo', color: '#049459' },
+      { id: uid(), nombre: 'Kawaii',           color: '#8E98DD' }
     ],
     bazares: [],
     bazarActivoId: null,
-    ajustes: { costoPin: 15, costoSticker: 8, empaque: 5, comision: 10, margen: 60 }
+    ajustes: { costoPin: 15, costoSticker: 8, empaque: 5, comision: 10, margen: 60 },
+    graficas: [],
+    recommendedChartStyles: {},
+    folioCounter: 1
   };
 }
 
@@ -89,17 +103,19 @@ function askConfirm(text, cb){
 
 /* ================= NAVEGACIÓN ================= */
 const PAGE_TITLES = {
-  cotizador: 'Cotizador rápido', cotizaciones: 'Cotizaciones guardadas',
-  nuevo: 'Producto nuevo', pin: 'Inventario de Pines', sticker: 'Inventario de Stickers',
-  etiquetas: 'Etiquetas y colores', bazares: 'Mis Bazares',
+  cotizador: 'Cotizador rápido', cotizaciones: 'Cotizaciones guardadas', clientes: 'Clientes',
+  nuevo: 'Producto nuevo (otros)', pin: 'Inventario de Pines', sticker: 'Inventario de Stickers',
+  otro: 'Otros productos', etiquetas: 'Etiquetas y colores', bazares: 'Mis Bazares',
   estadisticas: 'Estadísticas', ajustes: 'Ajustes de costos'
 };
 const PAGE_RENDERERS = {
   cotizador: renderQuoteEditor,
   cotizaciones: renderCotizacionesGuardadas,
+  clientes: renderClientes,
   nuevo: renderNuevoProducto,
   pin: () => renderInventoryGrid('pin'),
   sticker: () => renderInventoryGrid('sticker'),
+  otro: renderOtroPage,
   etiquetas: renderEtiquetas,
   bazares: renderBazares,
   estadisticas: renderEstadisticas,
@@ -116,7 +132,7 @@ function switchPage(page){
   if(PAGE_RENDERERS[page]) PAGE_RENDERERS[page]();
 }
 
-/* ================= SELECTS COMPARTIDOS (bazares) ================= */
+/* ================= SELECTS COMPARTIDOS ================= */
 function fillBazarSelect(select, includeNone=true){
   select.innerHTML = (includeNone ? '<option value="">— Ninguno —</option>' : '') +
     DB.bazares.map(b => `<option value="${b.id}">${esc(b.nombre)}</option>`).join('');
@@ -124,6 +140,14 @@ function fillBazarSelect(select, includeNone=true){
 function fillEtiquetaSelect(select){
   select.innerHTML = '<option value="">— Sin etiqueta —</option>' +
     DB.etiquetas.map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join('');
+}
+function fillClienteSelect(select){
+  select.innerHTML = '<option value="">— Sin cliente —</option>' +
+    DB.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+}
+function fillCategoriaDatalist(datalist){
+  const cats = [...new Set(DB.productos.filter(p=>p.tipo==='otro' && p.categoriaLibre).map(p=>p.categoriaLibre))];
+  datalist.innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
 }
 function refreshHeaderBazarSelect(){
   const sel = document.getElementById('bazar-activo-select');
@@ -148,11 +172,14 @@ function renderColorPicker(container, selectedColor, onPick){
 }
 
 /* ================================================================
-   COTIZADOR
+   COTIZADOR (con clientes, estilo factura)
    ================================================================ */
 function renderQuoteEditor(){
   document.getElementById('q-fecha').value = document.getElementById('q-fecha').value || todayStr();
+  document.getElementById('q-folio').textContent = '#' + String(DB.folioCounter).padStart(4,'0');
   fillBazarSelect(document.getElementById('q-bazar'));
+  fillClienteSelect(document.getElementById('q-cliente'));
+  document.getElementById('q-cliente').value = currentQuote.clienteId || '';
   renderQuoteItems();
   renderQuoteCosts();
   updateQuoteSummary();
@@ -169,6 +196,7 @@ function renderQuoteItems(){
         <select onchange="updateQuoteItem(${i},'tipo',this.value)">
           <option value="pin" ${it.tipo==='pin'?'selected':''}>📌 Pin</option>
           <option value="sticker" ${it.tipo==='sticker'?'selected':''}>✂️ Sticker</option>
+          <option value="otro" ${it.tipo==='otro'?'selected':''}>🎁 Otro</option>
         </select>
       </td>
       <td><input type="text" value="${esc(it.desc)}" onchange="updateQuoteItem(${i},'desc',this.value)" placeholder="Descripción"></td>
@@ -217,8 +245,7 @@ function updateQuoteSummary(){
 }
 
 function resetQuote(){
-  currentQuote = { items: [], costs: [] };
-  document.getElementById('q-cliente').value = '';
+  currentQuote = { items: [], costs: [], clienteId: null };
   document.getElementById('q-fecha').value = todayStr();
   renderQuoteEditor();
 }
@@ -232,13 +259,15 @@ function saveQuote(){
   const totalPrecio = precioItems + costoExtra;
   DB.cotizaciones.unshift({
     id: uid(),
-    cliente: document.getElementById('q-cliente').value || 'Sin nombre',
+    folio: String(DB.folioCounter).padStart(4,'0'),
+    clienteId: document.getElementById('q-cliente').value || null,
     fecha: document.getElementById('q-fecha').value || todayStr(),
     bazarId: document.getElementById('q-bazar').value || null,
     items: JSON.parse(JSON.stringify(currentQuote.items)),
     costs: JSON.parse(JSON.stringify(currentQuote.costs)),
     totalCosto, totalPrecio, ganancia: totalPrecio - totalCosto
   });
+  DB.folioCounter++;
   saveDB();
   toast('Cotización guardada ✅', 'success');
   resetQuote();
@@ -247,12 +276,14 @@ function saveQuote(){
 function exportQuotePDF(){
   const el = document.createElement('div');
   el.style.cssText = 'padding:24px;font-family:sans-serif;color:#2B2B2B;';
-  const cliente = document.getElementById('q-cliente').value || 'Sin nombre';
+  const clienteId = document.getElementById('q-cliente').value;
+  const cliente = DB.clientes.find(c=>c.id===clienteId);
   const fecha = document.getElementById('q-fecha').value || todayStr();
+  const folio = document.getElementById('q-folio').textContent;
   el.innerHTML = `
-    <h1 style="color:#FB6204;">CLOWN CLOUD</h1>
-    <h3>Cotización — ${esc(cliente)}</h3>
-    <p>Fecha: ${fecha}</p>
+    <h1 style="color:#049459;">CLOWN CLOUD</h1>
+    <h3>Cotización ${folio} ${cliente ? '— '+esc(cliente.nombre) : ''}</h3>
+    <p>Fecha: ${fecha}${cliente && cliente.telefono ? ' · Tel: '+esc(cliente.telefono) : ''}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:12px;">
       <thead><tr style="background:#eee;"><th style="text-align:left;padding:6px;">Producto</th><th style="padding:6px;">Cant.</th><th style="padding:6px;">Precio</th><th style="padding:6px;">Subtotal</th></tr></thead>
       <tbody>${currentQuote.items.map(it=>`<tr><td style="padding:6px;border-bottom:1px solid #ddd;">${esc(it.desc||PRODUCT_TYPES[it.tipo].singular)}</td><td style="padding:6px;text-align:center;border-bottom:1px solid #ddd;">${it.cant}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd;">${money(it.precio)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd;">${money(it.cant*it.precio)}</td></tr>`).join('')}</tbody>
@@ -260,7 +291,7 @@ function exportQuotePDF(){
     ${currentQuote.costs.length ? `<h4 style="margin-top:12px;">Costos extra</h4><ul>${currentQuote.costs.map(c=>`<li>${esc(c.concepto)}: ${money(c.monto)}</li>`).join('')}</ul>` : ''}
     <h3 style="margin-top:16px;">Total a cobrar: ${document.getElementById('q-sum-precio').textContent}</h3>
   `;
-  html2pdf().set({filename:`cotizacion-${cliente}.pdf`, margin:10}).from(el).save();
+  html2pdf().set({filename:`cotizacion-${folio}.pdf`, margin:10}).from(el).save();
 }
 
 function renderCotizacionesGuardadas(){
@@ -269,10 +300,12 @@ function renderCotizacionesGuardadas(){
     wrap.innerHTML = `<div class="empty-hint">Aún no guardas ninguna cotización.</div>`;
     return;
   }
-  wrap.innerHTML = DB.cotizaciones.map(q => `
+  wrap.innerHTML = DB.cotizaciones.map(q => {
+    const cliente = DB.clientes.find(c=>c.id===q.clienteId);
+    return `
     <div class="card">
       <div class="card-top">
-        <span class="card-title">${esc(q.cliente)}</span>
+        <span class="card-title">${cliente ? esc(cliente.nombre) : 'Sin cliente'} <span style="color:var(--color-text-muted);font-weight:600;">#${q.folio||''}</span></span>
         <span class="card-badge badge-inventario">${money(q.ganancia)}</span>
       </div>
       <div class="card-meta"><span>📅 ${q.fecha}</span><span>🧾 ${q.items.length} producto(s)</span></div>
@@ -282,15 +315,14 @@ function renderCotizacionesGuardadas(){
         <button onclick="reopenQuote('${q.id}')">↩️ Reabrir</button>
         <button class="danger" onclick="deleteQuote('${q.id}')">🗑️ Eliminar</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 function reopenQuote(id){
   const q = DB.cotizaciones.find(x=>x.id===id);
   if(!q) return;
-  currentQuote = { items: JSON.parse(JSON.stringify(q.items)), costs: JSON.parse(JSON.stringify(q.costs)) };
+  currentQuote = { items: JSON.parse(JSON.stringify(q.items)), costs: JSON.parse(JSON.stringify(q.costs)), clienteId: q.clienteId };
   switchPage('cotizador');
-  document.getElementById('q-cliente').value = q.cliente;
   document.getElementById('q-fecha').value = q.fecha;
   renderQuoteEditor();
   document.getElementById('q-bazar').value = q.bazarId || '';
@@ -304,20 +336,88 @@ function deleteQuote(id){
 }
 
 /* ================================================================
-   PRODUCTO NUEVO
+   CLIENTES
+   ================================================================ */
+function renderClientes(){
+  const body = document.getElementById('clientes-body');
+  if(!DB.clientes.length){
+    body.innerHTML = `<tr><td colspan="4" class="empty-hint">Aún no registras clientes.</td></tr>`;
+    return;
+  }
+  body.innerHTML = DB.clientes.map(c => {
+    const nCot = DB.cotizaciones.filter(q=>q.clienteId===c.id).length;
+    return `
+    <tr>
+      <td class="name-cell">👤 ${esc(c.nombre)}</td>
+      <td>${esc(c.telefono||'—')}</td>
+      <td>${nCot}</td>
+      <td>
+        <div class="row-actions">
+          <button onclick="openClienteModal('${c.id}')">✏️</button>
+          <button class="danger" onclick="deleteCliente('${c.id}')">🗑️</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+function openClienteModal(id, fromQuote){
+  cmEditingId = id || null;
+  quickAddFromQuote = !!fromQuote;
+  const c = id ? DB.clientes.find(x=>x.id===id) : {nombre:'',telefono:'',notas:''};
+  document.getElementById('cm-title').textContent = id ? 'Editar cliente' : 'Nuevo cliente';
+  document.getElementById('cm-nombre').value = c.nombre;
+  document.getElementById('cm-telefono').value = c.telefono || '';
+  document.getElementById('cm-notas').value = c.notas || '';
+  document.getElementById('cm-delete-btn').style.display = id ? 'inline-block' : 'none';
+  openModal('cliente-modal');
+}
+function saveClienteModal(){
+  const nombre = document.getElementById('cm-nombre').value.trim();
+  if(!nombre){ toast('Ponle un nombre al cliente', 'error'); return; }
+  const data = { nombre, telefono: document.getElementById('cm-telefono').value.trim(), notas: document.getElementById('cm-notas').value.trim() };
+  let newId = cmEditingId;
+  if(cmEditingId){
+    const idx = DB.clientes.findIndex(x=>x.id===cmEditingId);
+    DB.clientes[idx] = Object.assign({id:cmEditingId}, data);
+  } else {
+    newId = uid();
+    DB.clientes.push(Object.assign({id:newId}, data));
+  }
+  saveDB();
+  closeModal('cliente-modal');
+  toast('Cliente guardado ✅', 'success');
+  if(quickAddFromQuote){
+    fillClienteSelect(document.getElementById('q-cliente'));
+    document.getElementById('q-cliente').value = newId;
+    quickAddFromQuote = false;
+  }
+  if(currentPage==='clientes') renderClientes();
+}
+function deleteClienteModal(){
+  if(!cmEditingId) return;
+  askConfirm('¿Eliminar este cliente? Sus cotizaciones guardadas se conservan sin cliente asignado.', () => {
+    DB.clientes = DB.clientes.filter(x=>x.id!==cmEditingId);
+    DB.cotizaciones.forEach(q => { if(q.clienteId===cmEditingId) q.clienteId = null; });
+    saveDB(); closeModal('cliente-modal'); renderClientes(); toast('Cliente eliminado');
+  });
+}
+function deleteCliente(id){
+  askConfirm('¿Eliminar este cliente? Sus cotizaciones guardadas se conservan sin cliente asignado.', () => {
+    DB.clientes = DB.clientes.filter(x=>x.id!==id);
+    DB.cotizaciones.forEach(q => { if(q.clienteId===id) q.clienteId = null; });
+    saveDB(); renderClientes(); toast('Cliente eliminado');
+  });
+}
+
+/* ================================================================
+   PRODUCTO NUEVO (fuera de pines y stickers: figuras, mangas, etc.)
    ================================================================ */
 function renderNuevoProducto(){
   fillEtiquetaSelect(document.getElementById('np-etiqueta'));
   fillBazarSelect(document.getElementById('np-bazar-venta'));
+  fillCategoriaDatalist(document.getElementById('np-categoria-list'));
   renderColorPicker(document.getElementById('np-color-picker'), npSelectedColor, c => npSelectedColor = c);
   document.getElementById('np-fecha-compra').value = todayStr();
-  const ajustes = DB.ajustes;
-  document.getElementById('np-costo').value = npSelectedTipo==='pin' ? ajustes.costoPin : ajustes.costoSticker;
-}
-function setNpTipo(tipo){
-  npSelectedTipo = tipo;
-  document.querySelectorAll('#np-type-toggle .type-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.tipo===tipo));
-  document.getElementById('np-costo').value = tipo==='pin' ? DB.ajustes.costoPin : DB.ajustes.costoSticker;
 }
 function toggleVentaFields(estadoSelect, ventaFieldsId){
   document.getElementById(ventaFieldsId).style.display = estadoSelect.value === 'vendido' ? 'block' : 'none';
@@ -328,7 +428,8 @@ function submitNuevoProducto(e){
   if(!nombre){ toast('Ponle un nombre al producto', 'error'); return; }
   const estado = document.getElementById('np-estado').value;
   DB.productos.push({
-    id: uid(), tipo: npSelectedTipo, nombre,
+    id: uid(), tipo: 'otro', nombre,
+    categoriaLibre: document.getElementById('np-categoria').value.trim() || 'Sin categoría',
     etiquetaId: document.getElementById('np-etiqueta').value || null,
     color: npSelectedColor,
     cantidad: Number(document.getElementById('np-cantidad').value)||0,
@@ -342,7 +443,7 @@ function submitNuevoProducto(e){
     notas: document.getElementById('np-notas').value.trim()
   });
   saveDB();
-  toast(`${PRODUCT_TYPES[npSelectedTipo].singular} agregado a inventario ✅`, 'success');
+  toast('Producto agregado a inventario ✅', 'success');
   document.getElementById('np-form').reset();
   renderNuevoProducto();
   document.getElementById('np-venta-fields').style.display = 'none';
@@ -357,6 +458,7 @@ function renderInventoryGrid(tipo){
   const search = (document.getElementById('global-search').value || '').toLowerCase();
   let list = DB.productos.filter(p => p.tipo === tipo);
   if(filtro !== 'todos') list = list.filter(p => p.estado === filtro);
+  if(tipo==='otro' && otroCategoriaFilter !== 'todas') list = list.filter(p => (p.categoriaLibre||'Sin categoría') === otroCategoriaFilter);
   if(search) list = list.filter(p => p.nombre.toLowerCase().includes(search));
 
   if(!list.length){
@@ -375,6 +477,7 @@ function renderInventoryGrid(tipo){
       </div>
       <div class="card-meta">
         <span class="card-badge badge-${p.estado}">${ESTADOS[p.estado]}</span>
+        ${p.tipo==='otro' && p.categoriaLibre ? `<span class="card-badge badge-otro">${esc(p.categoriaLibre)}</span>` : ''}
         ${etiqueta ? `<span>🏷️ ${esc(etiqueta.nombre)}</span>` : ''}
       </div>
       <div class="card-row"><span>Día de compra</span><span>${p.fechaCompra||'—'}</span></div>
@@ -393,23 +496,40 @@ function renderInventoryGrid(tipo){
   }).join('');
 }
 
+function renderOtroPage(){
+  const bar = document.getElementById('filter-otro-categoria');
+  const cats = ['todas', ...new Set(DB.productos.filter(p=>p.tipo==='otro').map(p=>p.categoriaLibre||'Sin categoría'))];
+  bar.innerHTML = cats.map(c => `<button class="filter-chip${c===otroCategoriaFilter?' active':''}" data-cat="${esc(c)}">${c==='todas'?'Todas las categorías':esc(c)}</button>`).join('');
+  bar.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      otroCategoriaFilter = chip.dataset.cat;
+      renderOtroPage();
+    });
+  });
+  renderInventoryGrid('otro');
+}
+
 function openProductModal(id, tipoForNew){
   pmEditingId = id;
   fillEtiquetaSelect(document.getElementById('pm-etiqueta'));
   fillBazarSelect(document.getElementById('pm-bazar-venta'));
+  fillCategoriaDatalist(document.getElementById('pm-categoria-list'));
   const isNew = !id;
-  document.getElementById('pm-title').textContent = isNew ? `Nuevo ${PRODUCT_TYPES[tipoForNew].singular}` : 'Editar producto';
+  const tipo = isNew ? tipoForNew : DB.productos.find(x=>x.id===id).tipo;
+  document.getElementById('pm-title').textContent = isNew ? `Nuevo ${PRODUCT_TYPES[tipo].singular}` : 'Editar producto';
   document.getElementById('pm-delete-btn').style.display = isNew ? 'none' : 'inline-block';
 
   const p = isNew ? {
-    tipo: tipoForNew, nombre:'', etiquetaId:null, color: BRAND_COLORS[0], cantidad:1,
-    costoCompra: tipoForNew==='pin'?DB.ajustes.costoPin:DB.ajustes.costoSticker,
+    tipo, nombre:'', categoriaLibre:'', etiquetaId:null, color: BRAND_COLORS[0], cantidad:1,
+    costoCompra: tipo==='pin'?DB.ajustes.costoPin: tipo==='sticker'?DB.ajustes.costoSticker : 0,
     precioVenta:0, estado:'inventario', fechaCompra: todayStr(), fechaVenta:null,
     bazarVentaId:null, ingresoExtra:0, notas:''
   } : DB.productos.find(x=>x.id===id);
 
   document.getElementById('pm-nombre').value = p.nombre;
   document.getElementById('pm-etiqueta').value = p.etiquetaId || '';
+  document.getElementById('pm-categoria-group').style.display = tipo==='otro' ? 'block' : 'none';
+  document.getElementById('pm-categoria').value = p.categoriaLibre || '';
   pmSelectedColor = p.color;
   renderColorPicker(document.getElementById('pm-color-picker'), pmSelectedColor, c => pmSelectedColor = c);
   document.getElementById('pm-cantidad').value = p.cantidad;
@@ -422,7 +542,7 @@ function openProductModal(id, tipoForNew){
   document.getElementById('pm-ingreso-extra').value = p.ingresoExtra || 0;
   document.getElementById('pm-notas').value = p.notas || '';
   toggleVentaFields(document.getElementById('pm-estado'), 'pm-venta-fields');
-  document.getElementById('product-modal').dataset.tipo = p.tipo;
+  document.getElementById('product-modal').dataset.tipo = tipo;
   openModal('product-modal');
 }
 
@@ -433,6 +553,7 @@ function saveProductModal(){
   const tipo = document.getElementById('product-modal').dataset.tipo;
   const data = {
     tipo, nombre,
+    categoriaLibre: tipo==='otro' ? (document.getElementById('pm-categoria').value.trim() || 'Sin categoría') : null,
     etiquetaId: document.getElementById('pm-etiqueta').value || null,
     color: pmSelectedColor,
     cantidad: Number(document.getElementById('pm-cantidad').value)||0,
@@ -562,14 +683,88 @@ function deleteBazar(id){
 }
 
 /* ================================================================
-   ESTADÍSTICAS
+   ESTADÍSTICAS — guía de métricas + combinaciones + gráficas propias
    ================================================================ */
-let chartIngresos=null, chartEstado=null, chartTipo=null;
+const RECOMMENDED_COMBINATIONS = [
+  { id:'etiqueta-ganancia', title:'Etiqueta + ganancia', description:'Identifica qué etiquetas dejan más ganancia.', fuente:'inventario', dimension:'etiqueta', metrica:'ganancia', tipo:'bar' },
+  { id:'color-ventas',      title:'Color + ingresos',    description:'Descubre qué colores se venden mejor.',        fuente:'inventario', dimension:'color',    metrica:'ingresos', tipo:'bar' },
+  { id:'tipo-ingresos',     title:'Tipo de producto + ingresos', description:'Compara pines, stickers y otros productos.', fuente:'inventario', dimension:'tipo', metrica:'ingresos', tipo:'doughnut' },
+  { id:'categoria-stock',   title:'Categoría (otros) + stock', description:'Detecta qué figuras/mangas debes reponer.', fuente:'inventario', dimension:'categoria', metrica:'stock', tipo:'bar' },
+  { id:'bazar-ingresos',    title:'Bazar + ingresos',    description:'Compara en qué bazares te conviene vender.',    fuente:'bazares', tipo:'bar' },
+  { id:'estado-inventario', title:'Estado del inventario', description:'Mira cuánto tienes disponible vs. vendido.',  fuente:'estado', tipo:'doughnut' }
+];
+
+let chartInstances = {};
+let recommendedChart = null;
+let selectedRecommendedCombination = 'etiqueta-ganancia';
+
+function getRecommendedStyle(id){
+  const saved = (DB.recommendedChartStyles || {})[id] || {};
+  const combination = RECOMMENDED_COMBINATIONS.find(c=>c.id===id) || RECOMMENDED_COMBINATIONS[0];
+  return { tipo: saved.tipo || combination.tipo, paleta: saved.paleta || 'verde' };
+}
+
+function datosGrafica(fuente, dimension, metrica){
+  if(fuente === 'bazares'){
+    const labels = DB.bazares.map(b=>b.nombre);
+    const values = DB.bazares.map(b => DB.productos.filter(p=>p.bazarVentaId===b.id && p.estado==='vendido').reduce((s,p)=>s+p.precioVenta+(p.ingresoExtra||0),0));
+    return { labels: labels.length?labels:['Sin bazares'], values: labels.length?values:[0], label:'Ingresos ($)' };
+  }
+  if(fuente === 'estado'){
+    return {
+      labels: ['En inventario','Vendido','Agotado'],
+      values: [
+        DB.productos.filter(p=>p.estado==='inventario').length,
+        DB.productos.filter(p=>p.estado==='vendido').length,
+        DB.productos.filter(p=>p.estado==='agotado').length
+      ],
+      label:'Productos'
+    };
+  }
+  if(fuente === 'tipo-producto'){
+    return {
+      labels: Object.values(PRODUCT_TYPES).map(t=>t.label),
+      values: Object.keys(PRODUCT_TYPES).map(k => DB.productos.filter(p=>p.tipo===k && p.estado==='vendido').reduce((s,p)=>s+p.precioVenta+(p.ingresoExtra||0),0)),
+      label:'Ingresos ($)'
+    };
+  }
+  // fuente === 'inventario' (agrupado por dimension, medido por metrica)
+  const grupos = {};
+  const agregar = (grupo, p) => {
+    const cant = p.cantidad || 0;
+    const costo = p.costoCompra * cant;
+    const ingresos = p.estado==='vendido' ? (p.precioVenta + (p.ingresoExtra||0)) : 0;
+    const ganancia = p.estado==='vendido' ? (ingresos - p.costoCompra) : 0;
+    grupos[grupo] = (grupos[grupo]||0) + ({stock:cant, costo, ingresos, ganancia}[metrica] || 0);
+  };
+  DB.productos.forEach(p => {
+    let grupo;
+    if(dimension === 'etiqueta'){
+      const et = DB.etiquetas.find(t=>t.id===p.etiquetaId);
+      grupo = et ? et.nombre : 'Sin etiqueta';
+    } else if(dimension === 'color'){
+      grupo = p.color;
+    } else if(dimension === 'tipo'){
+      grupo = PRODUCT_TYPES[p.tipo] ? PRODUCT_TYPES[p.tipo].label : p.tipo;
+    } else if(dimension === 'categoria'){
+      if(p.tipo !== 'otro') return;
+      grupo = p.categoriaLibre || 'Sin categoría';
+    } else if(dimension === 'estado'){
+      grupo = ESTADOS[p.estado] || p.estado;
+    } else {
+      grupo = 'Sin dato';
+    }
+    agregar(grupo, p);
+  });
+  const labels = Object.keys(grupos);
+  const metricLabels = { stock:'Piezas', costo:'Costo ($)', ingresos:'Ingresos ($)', ganancia:'Ganancia ($)' };
+  return { labels: labels.length?labels:['Sin datos'], values: labels.length?labels.map(l=>grupos[l]):[0], label: metricLabels[metrica]||'Inventario' };
+}
+
 function renderEstadisticas(){
   const productos = DB.productos;
   const enInventario = productos.filter(p=>p.estado==='inventario').reduce((s,p)=>s+p.cantidad,0);
   const vendidos = productos.filter(p=>p.estado==='vendido');
-  const agotados = productos.filter(p=>p.estado==='agotado').length;
   const ingresos = vendidos.reduce((s,p)=>s+p.precioVenta+(p.ingresoExtra||0),0);
   const costoVendidos = vendidos.reduce((s,p)=>s+p.costoCompra,0);
 
@@ -578,40 +773,128 @@ function renderEstadisticas(){
   document.getElementById('st-ingresos').textContent = money(ingresos);
   document.getElementById('st-ganancia').textContent = money(ingresos - costoVendidos);
 
-  // Ingresos por mes (últimos 6 meses con datos)
-  const monthMap = {};
-  vendidos.forEach(p => {
-    if(!p.fechaVenta) return;
-    const key = p.fechaVenta.slice(0,7);
-    monthMap[key] = (monthMap[key]||0) + p.precioVenta + (p.ingresoExtra||0);
-  });
-  const months = Object.keys(monthMap).sort().slice(-6);
-  const ctx1 = document.getElementById('chart-ingresos').getContext('2d');
-  if(chartIngresos) chartIngresos.destroy();
-  chartIngresos = new Chart(ctx1, {
-    type:'bar',
-    data:{ labels: months.length?months:['Sin datos'], datasets:[{ label:'Ingresos', data: months.length?months.map(m=>monthMap[m]):[0], backgroundColor:'#FB6204', borderRadius:6 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{display:false}}, y:{beginAtZero:true} } }
-  });
+  renderCombinacionesRecomendadas();
+  renderGraficasPersonalizadas();
+}
 
-  const ctx2 = document.getElementById('chart-estado').getContext('2d');
-  if(chartEstado) chartEstado.destroy();
-  chartEstado = new Chart(ctx2, {
-    type:'doughnut',
-    data:{ labels:['En inventario','Vendido','Agotado'], datasets:[{ data:[
-      productos.filter(p=>p.estado==='inventario').length, vendidos.length, agotados
-    ], backgroundColor:['#049459','#468AC9','#C34804'] }] },
-    options:{ responsive:true, maintainAspectRatio:false }
+function renderCombinacionesRecomendadas(){
+  const list = document.getElementById('recommended-combinations');
+  if(!list) return;
+  list.innerHTML = RECOMMENDED_COMBINATIONS.map(c => `
+    <button class="recommended-combination${c.id===selectedRecommendedCombination?' active':''}" data-combo="${c.id}">
+      <span class="recommended-combination-title">${c.title}</span>
+      <span class="recommended-combination-meta">${c.description}</span>
+    </button>`).join('');
+  list.querySelectorAll('[data-combo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedRecommendedCombination = btn.dataset.combo;
+      renderCombinacionesRecomendadas();
+    });
   });
+  renderCombinacionSeleccionada(selectedRecommendedCombination);
+}
 
-  const ctx3 = document.getElementById('chart-tipo').getContext('2d');
-  if(chartTipo) chartTipo.destroy();
-  chartTipo = new Chart(ctx3, {
-    type:'doughnut',
-    data:{ labels:['Pines vendidos','Stickers vendidos'], datasets:[{ data:[
-      vendidos.filter(p=>p.tipo==='pin').length, vendidos.filter(p=>p.tipo==='sticker').length
-    ], backgroundColor:['#FB6204','#ED5399'] }] },
-    options:{ responsive:true, maintainAspectRatio:false }
+function renderCombinacionSeleccionada(id){
+  const combo = RECOMMENDED_COMBINATIONS.find(c=>c.id===id) || RECOMMENDED_COMBINATIONS[0];
+  const style = getRecommendedStyle(combo.id);
+  const canvas = document.getElementById('recommended-chart');
+  const empty = document.getElementById('recommended-chart-empty');
+  if(!canvas) return;
+  document.getElementById('recommended-chart-title').textContent = combo.title;
+  document.getElementById('recommended-chart-description').textContent = combo.description;
+  document.getElementById('recommended-chart-type').value = style.tipo;
+  document.getElementById('recommended-chart-palette').value = style.paleta;
+  const data = datosGrafica(combo.fuente, combo.dimension, combo.metrica);
+  if(recommendedChart) recommendedChart.destroy();
+  const hasData = data.labels.length && data.values.some(v=>Number(v)>0);
+  canvas.style.display = hasData ? 'block' : 'none';
+  empty.style.display = hasData ? 'none' : 'block';
+  if(!hasData) return;
+  recommendedChart = new Chart(canvas, {
+    type: style.tipo,
+    data: { labels: data.labels, datasets: [{ label: data.label, data: data.values, backgroundColor: CHART_PALETTES[style.paleta], borderColor: CHART_PALETTES[style.paleta][0], borderWidth:2, borderRadius: style.tipo==='bar'?6:0, tension:.25 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, scales: (style.tipo==='doughnut'||style.tipo==='pie') ? {} : { y:{beginAtZero:true} } }
+  });
+}
+
+function applyRecommendedStyle(){
+  DB.recommendedChartStyles[selectedRecommendedCombination] = {
+    tipo: document.getElementById('recommended-chart-type').value,
+    paleta: document.getElementById('recommended-chart-palette').value
+  };
+  saveDB();
+  renderCombinacionSeleccionada(selectedRecommendedCombination);
+  toast('Estilo de la gráfica actualizado ✅', 'success');
+}
+
+function openGraficaModal(id){
+  gmEditingId = id || null;
+  document.getElementById('gm-title').textContent = id ? 'Editar gráfica' : 'Nueva gráfica';
+  const g = id ? DB.graficas.find(x=>x.id===id) : null;
+  document.getElementById('gm-titulo').value = g ? g.titulo : '';
+  document.getElementById('gm-fuente').value = g ? g.fuente : 'inventario';
+  document.getElementById('gm-tipo').value = g ? g.tipo : 'bar';
+  document.getElementById('gm-dimension').value = g ? (g.dimension||'etiqueta') : 'etiqueta';
+  document.getElementById('gm-metrica').value = g ? (g.metrica||'stock') : 'stock';
+  toggleGraficaInventarioOptions();
+  openModal('grafica-modal');
+}
+function toggleGraficaInventarioOptions(){
+  document.getElementById('gm-inventario-options').style.display = document.getElementById('gm-fuente').value === 'inventario' ? 'flex' : 'none';
+}
+function saveGrafica(){
+  const titulo = document.getElementById('gm-titulo').value.trim();
+  if(!titulo){ toast('Escribe un título para la gráfica', 'error'); return; }
+  const data = {
+    titulo,
+    fuente: document.getElementById('gm-fuente').value,
+    tipo: document.getElementById('gm-tipo').value,
+    dimension: document.getElementById('gm-dimension').value || 'etiqueta',
+    metrica: document.getElementById('gm-metrica').value || 'stock'
+  };
+  if(gmEditingId){
+    Object.assign(DB.graficas.find(g=>g.id===gmEditingId), data);
+  } else {
+    DB.graficas.push(Object.assign({id: uid()}, data));
+  }
+  saveDB();
+  closeModal('grafica-modal');
+  renderGraficasPersonalizadas();
+  toast(gmEditingId ? 'Gráfica actualizada ✅' : 'Gráfica agregada ✅', 'success');
+}
+function deleteGrafica(id){
+  askConfirm('¿Eliminar esta gráfica?', () => {
+    DB.graficas = DB.graficas.filter(g=>g.id!==id);
+    if(chartInstances[id]){ chartInstances[id].destroy(); delete chartInstances[id]; }
+    saveDB(); renderGraficasPersonalizadas(); toast('Gráfica eliminada');
+  });
+}
+function renderGraficasPersonalizadas(){
+  const grid = document.getElementById('custom-charts-grid');
+  const empty = document.getElementById('custom-charts-empty');
+  if(!grid) return;
+  Object.keys(chartInstances).forEach(id => { chartInstances[id].destroy(); delete chartInstances[id]; });
+  empty.style.display = DB.graficas.length ? 'none' : 'block';
+  grid.innerHTML = DB.graficas.map(g => `
+    <div class="custom-chart-card">
+      <div class="card-top" style="margin-bottom:var(--space-2);">
+        <span class="card-title" style="font-size:var(--fs-sm);">${esc(g.titulo)}</span>
+        <div class="row-actions">
+          <button onclick="openGraficaModal('${g.id}')">✏️</button>
+          <button class="danger" onclick="deleteGrafica('${g.id}')">🗑️</button>
+        </div>
+      </div>
+      <canvas id="chart-custom-${g.id}" class="custom-chart-canvas"></canvas>
+    </div>`).join('');
+  DB.graficas.forEach(g => {
+    const canvas = document.getElementById('chart-custom-' + g.id);
+    if(!canvas) return;
+    const data = datosGrafica(g.fuente, g.dimension, g.metrica);
+    chartInstances[g.id] = new Chart(canvas, {
+      type: g.tipo,
+      data: { labels: data.labels, datasets: [{ label: data.label, data: data.values, backgroundColor: CHART_PALETTES.verde, borderColor: '#049459', borderWidth:2, tension:.25 }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}, scales: (g.tipo==='doughnut'||g.tipo==='pie') ? {} : { y:{beginAtZero:true} } }
+    });
   });
 }
 
@@ -653,11 +936,11 @@ function exportJSON(){
   toast('Respaldo JSON descargado', 'success');
 }
 function exportCSV(){
-  const rows = [['Tipo','Nombre','Etiqueta','Color','Cantidad','Costo compra','Precio venta','Estado','Fecha compra','Fecha venta','Bazar venta','Ingreso extra','Notas']];
+  const rows = [['Tipo','Categoría','Nombre','Etiqueta','Color','Cantidad','Costo compra','Precio venta','Estado','Fecha compra','Fecha venta','Bazar venta','Ingreso extra','Notas']];
   DB.productos.forEach(p => {
     const etiqueta = DB.etiquetas.find(t=>t.id===p.etiquetaId);
     const bazar = DB.bazares.find(b=>b.id===p.bazarVentaId);
-    rows.push([p.tipo, p.nombre, etiqueta?etiqueta.nombre:'', p.color, p.cantidad, p.costoCompra, p.precioVenta, ESTADOS[p.estado], p.fechaCompra||'', p.fechaVenta||'', bazar?bazar.nombre:'', p.ingresoExtra||0, (p.notas||'').replace(/\n/g,' ')]);
+    rows.push([p.tipo, p.categoriaLibre||'', p.nombre, etiqueta?etiqueta.nombre:'', p.color, p.cantidad, p.costoCompra, p.precioVenta, ESTADOS[p.estado], p.fechaCompra||'', p.fechaVenta||'', bazar?bazar.nombre:'', p.ingresoExtra||0, (p.notas||'').replace(/\n/g,' ')]);
   });
   const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadFile(`clowncloud-inventario-${todayStr()}.csv`, csv, 'text/csv');
@@ -704,7 +987,6 @@ function boot(){
 document.addEventListener('DOMContentLoaded', () => {
   boot();
 
-  // Navegación
   document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
     btn.addEventListener('click', () => switchPage(btn.dataset.page));
   });
@@ -717,18 +999,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sidebar-overlay').classList.remove('open');
   });
 
-  // Búsqueda global (filtra inventario si estamos en pin/sticker)
   document.getElementById('global-search').addEventListener('input', () => {
-    if(currentPage==='pin' || currentPage==='sticker') renderInventoryGrid(currentPage);
+    if(currentPage==='pin' || currentPage==='sticker' || currentPage==='otro') renderInventoryGrid(currentPage);
   });
 
-  // Bazar activo (header)
   document.getElementById('bazar-activo-select').addEventListener('change', e => {
     DB.bazarActivoId = e.target.value || null; saveDB();
   });
   document.getElementById('header-bazar-add').addEventListener('click', () => openBazarModal(null));
 
-  // Dark mode + backup menu
   document.getElementById('dark-mode-btn').addEventListener('click', toggleDarkMode);
   document.getElementById('backup-btn').addEventListener('click', () => document.getElementById('backup-menu').classList.toggle('open'));
   document.addEventListener('click', e => {
@@ -740,7 +1019,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.target.files[0]) importJSON(e.target.files[0]);
   });
 
-  // Modales genéricos
   document.querySelectorAll('[data-close-modal]').forEach(btn => {
     btn.addEventListener('click', () => closeModal(btn.dataset.closeModal));
   });
@@ -752,7 +1030,6 @@ document.addEventListener('DOMContentLoaded', () => {
     closeModal('confirm-modal');
   });
 
-  // Cotizador
   document.getElementById('q-add-item').addEventListener('click', () => {
     currentQuote.items.push({ tipo:'pin', desc:'', cant:1, costo:DB.ajustes.costoPin, precio:0 });
     renderQuoteItems(); updateQuoteSummary();
@@ -764,15 +1041,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('q-reset-btn').addEventListener('click', () => askConfirm('¿Empezar una cotización nueva? Se perderá lo no guardado.', resetQuote));
   document.getElementById('q-save-btn').addEventListener('click', saveQuote);
   document.getElementById('q-pdf-btn').addEventListener('click', exportQuotePDF);
+  document.getElementById('q-cliente-add').addEventListener('click', () => openClienteModal(null, true));
 
-  // Producto nuevo
-  document.querySelectorAll('#np-type-toggle .type-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => setNpTipo(btn.dataset.tipo));
-  });
   document.getElementById('np-estado').addEventListener('change', e => toggleVentaFields(e.target, 'np-venta-fields'));
   document.getElementById('np-form').addEventListener('submit', submitNuevoProducto);
 
-  // Inventario: botones "+ Nuevo" y filtros por tipo
   document.querySelectorAll('[data-add-tipo]').forEach(btn => {
     btn.addEventListener('click', () => openProductModal(null, btn.dataset.addTipo));
   });
@@ -787,19 +1060,32 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+  document.querySelectorAll('#filter-otro-estado .filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#filter-otro-estado .filter-chip').forEach(c=>c.classList.remove('active'));
+      chip.classList.add('active');
+      inventoryFilters.otro = chip.dataset.estado;
+      renderInventoryGrid('otro');
+    });
+  });
 
-  // Modal producto
   document.getElementById('pm-estado').addEventListener('change', e => toggleVentaFields(e.target, 'pm-venta-fields'));
   document.getElementById('pm-save-btn').addEventListener('click', saveProductModal);
   document.getElementById('pm-delete-btn').addEventListener('click', deleteProductFromModal);
 
-  // Etiquetas
   document.getElementById('tag-add-btn').addEventListener('click', addEtiqueta);
 
-  // Bazares
   document.getElementById('bazar-add-btn').addEventListener('click', () => openBazarModal(null));
   document.getElementById('bm-save-btn').addEventListener('click', saveBazarModal);
 
-  // Ajustes
+  document.getElementById('cliente-add-btn').addEventListener('click', () => openClienteModal(null, false));
+  document.getElementById('cm-save-btn').addEventListener('click', saveClienteModal);
+  document.getElementById('cm-delete-btn').addEventListener('click', deleteClienteModal);
+
+  document.getElementById('recommended-chart-apply').addEventListener('click', applyRecommendedStyle);
+  document.getElementById('grafica-add-btn').addEventListener('click', () => openGraficaModal(null));
+  document.getElementById('gm-fuente').addEventListener('change', toggleGraficaInventarioOptions);
+  document.getElementById('gm-save-btn').addEventListener('click', saveGrafica);
+
   document.getElementById('cfg-save-btn').addEventListener('click', saveAjustes);
 });
