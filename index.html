@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLOWN CLOUD — Gestión de Pines y Stickers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark">
+
+<div class="app-layout">
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-mark">🤡</span>
+      <span class="logo-word">CLOWN<b>CLOUD</b></span>
+    </div>
+
+    <!-- [ESCALABLE] Para agregar una sección nueva:
+         1) agrega un <button class="nav-item" data-page="clave">
+         2) agrega un <section class="page-section" id="page-clave"> abajo
+         3) registra la clave en PAGES dentro de app.js -->
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">Ventas</div>
+      <button class="nav-item active" data-page="cotizador">🧮 Cotizador rápido</button>
+      <button class="nav-item" data-page="cotizaciones">📁 Cotizaciones guardadas</button>
+
+      <div class="nav-group-label">Inventario</div>
+      <button class="nav-item" data-page="nuevo">🆕 Producto nuevo</button>
+      <button class="nav-item" data-page="pin">📌 Pines</button>
+      <button class="nav-item" data-page="sticker">✂️ Stickers</button>
+
+      <div class="nav-group-label">Catálogo</div>
+      <button class="nav-item" data-page="etiquetas">🏷️ Etiquetas y colores</button>
+      <button class="nav-item" data-page="bazares">🎪 Mis Bazares</button>
+
+      <div class="nav-group-label">Reportes</div>
+      <button class="nav-item" data-page="estadisticas">📊 Estadísticas</button>
+
+      <div class="nav-group-label">Sistema</div>
+      <button class="nav-item" data-page="ajustes">⚙️ Ajustes de costos</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="btn-icon" id="dark-mode-btn">☀️ <span>Modo claro</span></button>
+      <div style="position:relative;">
+        <button class="btn-icon" id="backup-btn" style="width:100%;">💾 <span>Respaldo de datos</span></button>
+        <div class="backup-menu" id="backup-menu">
+          <div class="backup-menu-label">Exportar</div>
+          <button class="backup-menu-item" id="export-json-btn">📦 Descargar todo (JSON)</button>
+          <button class="backup-menu-item" id="export-csv-btn">📊 Inventario (CSV)</button>
+          <div class="backup-menu-divider"></div>
+          <label class="backup-menu-item" style="cursor:pointer;">
+            📥 Cargar respaldo JSON
+            <input type="file" id="import-json-input" accept=".json" style="display:none">
+          </label>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- ============================ MAIN AREA ============================ -->
+  <main class="main-area">
+    <header class="header">
+      <button id="sidebar-toggle">☰</button>
+      <span class="header-title" id="header-title">Cotizador rápido</span>
+
+      <div class="bazar-activo-bar">
+        <span class="bazar-activo-label">Bazar activo:</span>
+        <select id="bazar-activo-select"></select>
+        <button id="header-bazar-add" title="Agregar bazar">+</button>
+      </div>
+
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" id="global-search" placeholder="Buscar producto por nombre...">
+      </div>
+    </header>
+
+    <div class="page-content">
+
+      <!-- ============================ COTIZADOR ============================ -->
+      <section class="page-section active" id="page-cotizador">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🧮 Cotizador rápido</div>
+            <div class="section-sub">Arma una cotización de pines y stickers, agrega costos extra y calcula tu ganancia al instante.</div>
+          </div>
+        </div>
+
+        <div class="quote-meta-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Cliente / Pedido</label>
+              <input type="text" class="form-input" id="q-cliente" placeholder="Nombre del cliente o pedido">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fecha</label>
+              <input type="date" class="form-input" id="q-fecha">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bazar relacionado</label>
+              <select class="form-select" id="q-bazar"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="quote-table-wrap">
+          <table class="quote-table">
+            <thead>
+              <tr>
+                <th style="min-width:110px;">Tipo</th>
+                <th style="min-width:180px;">Descripción</th>
+                <th style="width:70px;">Cant.</th>
+                <th style="width:110px;">Costo unit.</th>
+                <th style="width:110px;">Precio unit.</th>
+                <th style="width:100px;">Subtotal</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="q-items-body"></tbody>
+          </table>
+          <div class="quote-add-space" id="q-add-item">
+            <span class="quote-add-space-icon">＋</span>
+            <strong>Agregar producto a la cotización</strong>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <div>
+            <div class="section-title" style="font-size:var(--fs-md);">Costos extra</div>
+            <div class="section-sub">Empaque, envío, comisión de bazar, diseño, etc.</div>
+          </div>
+        </div>
+        <div class="quote-table-wrap">
+          <table class="quote-table">
+            <thead><tr><th>Concepto</th><th style="width:140px;">Monto</th><th style="width:40px;"></th></tr></thead>
+            <tbody id="q-costs-body"></tbody>
+          </table>
+          <div class="quote-add-space" id="q-add-cost">
+            <span class="quote-add-space-icon">＋</span>
+            <strong>Agregar costo extra</strong>
+          </div>
+        </div>
+
+        <div class="quote-summary">
+          <div class="summary-card">
+            <div class="summary-label">Costo total</div>
+            <div class="summary-value" id="q-sum-costo">$0.00</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Total a cobrar</div>
+            <div class="summary-value" id="q-sum-precio">$0.00</div>
+          </div>
+          <div class="summary-card accent">
+            <div class="summary-label">Ganancia estimada</div>
+            <div class="summary-value" id="q-sum-ganancia">$0.00</div>
+          </div>
+        </div>
+
+        <div class="quote-actions">
+          <button class="btn-secondary" id="q-reset-btn">🗑️ Nueva cotización</button>
+          <button class="btn-secondary" id="q-pdf-btn">📄 Exportar PDF</button>
+          <button class="btn-primary" id="q-save-btn">💾 Guardar cotización</button>
+        </div>
+      </section>
+
+      <!-- ============================ COTIZACIONES GUARDADAS ============================ -->
+      <section class="page-section" id="page-cotizaciones">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📁 Cotizaciones guardadas</div>
+            <div class="section-sub">Consulta, reabre o exporta tus cotizaciones anteriores.</div>
+          </div>
+        </div>
+        <div id="cotizaciones-list" class="cards-grid"></div>
+      </section>
+
+      <!-- ============================ PRODUCTO NUEVO ============================ -->
+      <section class="page-section" id="page-nuevo">
+        <div class="new-product-hero">
+          <h2>🆕 Agrega un producto nuevo</h2>
+          <div class="section-sub">Registra el pin o sticker con su estado, fecha de compra y, si ya se vendió, sus ingresos.</div>
+        </div>
+
+        <div class="type-toggle" id="np-type-toggle">
+          <button class="type-toggle-btn active" data-tipo="pin">📌 Es un Pin</button>
+          <button class="type-toggle-btn" data-tipo="sticker">✂️ Es un Sticker</button>
+        </div>
+
+        <form id="np-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Nombre del producto</label>
+              <input type="text" class="form-input" id="np-nombre" required placeholder="Ej. Payasito Nube">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Etiqueta / Categoría</label>
+              <select class="form-select" id="np-etiqueta"></select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Color</label>
+            <div class="color-swatch-picker" id="np-color-picker"></div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Cantidad en stock</label>
+              <input type="number" class="form-input" id="np-cantidad" min="0" value="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Costo de compra (unitario)</label>
+              <input type="number" class="form-input" id="np-costo" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Precio de venta sugerido</label>
+              <input type="number" class="form-input" id="np-precio" min="0" step="0.01" placeholder="0.00">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Día de compra</label>
+              <input type="date" class="form-input" id="np-fecha-compra">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Estado</label>
+              <select class="form-select" id="np-estado">
+                <option value="inventario">En inventario</option>
+                <option value="vendido">Vendido</option>
+                <option value="agotado">Agotado / descontinuado</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="np-venta-fields" style="display:none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Fecha de venta</label>
+                <input type="date" class="form-input" id="np-fecha-venta">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Bazar donde se vendió</label>
+                <select class="form-select" id="np-bazar-venta"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Ingresos extra</label>
+                <input type="number" class="form-input" id="np-ingreso-extra" min="0" step="0.01" placeholder="Propina, combo, etc.">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Notas</label>
+            <textarea class="form-textarea" id="np-notas" placeholder="Detalles del diseño, material, tamaño..."></textarea>
+          </div>
+
+          <button type="submit" class="btn-primary btn-block">✅ Guardar producto</button>
+        </form>
+      </section>
+
+      <!-- ============================ INVENTARIO: PINES ============================ -->
+      <section class="page-section" id="page-pin">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📌 Inventario de Pines</div>
+            <div class="section-sub">Estado, fecha de compra, ventas e ingresos de cada pin.</div>
+          </div>
+          <div>
+            <button class="btn-primary" data-add-tipo="pin">＋ Nuevo pin</button>
+          </div>
+        </div>
+        <div class="filter-bar" data-filter-for="pin">
+          <button class="filter-chip active" data-estado="todos">Todos</button>
+          <button class="filter-chip" data-estado="inventario">En inventario</button>
+          <button class="filter-chip" data-estado="vendido">Vendidos</button>
+          <button class="filter-chip" data-estado="agotado">Agotados</button>
+        </div>
+        <div id="grid-pin" class="cards-grid"></div>
+      </section>
+
+      <!-- ============================ INVENTARIO: STICKERS ============================ -->
+      <section class="page-section" id="page-sticker">
+        <div class="section-header">
+          <div>
+            <div class="section-title">✂️ Inventario de Stickers</div>
+            <div class="section-sub">Estado, fecha de compra, ventas e ingresos de cada sticker.</div>
+          </div>
+          <div>
+            <button class="btn-primary" data-add-tipo="sticker">＋ Nuevo sticker</button>
+          </div>
+        </div>
+        <div class="filter-bar" data-filter-for="sticker">
+          <button class="filter-chip active" data-estado="todos">Todos</button>
+          <button class="filter-chip" data-estado="inventario">En inventario</button>
+          <button class="filter-chip" data-estado="vendido">Vendidos</button>
+          <button class="filter-chip" data-estado="agotado">Agotados</button>
+        </div>
+        <div id="grid-sticker" class="cards-grid"></div>
+      </section>
+
+      <!-- ============================ ETIQUETAS Y COLORES ============================ -->
+      <section class="page-section" id="page-etiquetas">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🏷️ Etiquetas y colores</div>
+            <div class="section-sub">Catálogo reutilizable para clasificar tus productos.</div>
+          </div>
+        </div>
+        <div class="quote-meta-card">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Nombre de la etiqueta</label>
+              <input type="text" class="form-input" id="tag-nombre" placeholder="Ej. Colección Circo">
+            </div>
+            <div class="form-group" style="max-width:160px;">
+              <label class="form-label">Color</label>
+              <input type="color" class="form-input" id="tag-color" value="#FB6204" style="height:44px;padding:4px;">
+            </div>
+          </div>
+          <button class="btn-primary" id="tag-add-btn">＋ Agregar etiqueta</button>
+        </div>
+        <div class="chips-grid" id="tags-list"></div>
+      </section>
+
+      <!-- ============================ MIS BAZARES ============================ -->
+      <section class="page-section" id="page-bazares">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🎪 Mis Bazares</div>
+            <div class="section-sub">Eventos donde vendes — úsalos en cotizaciones y en tus productos vendidos.</div>
+          </div>
+          <div>
+            <button class="btn-primary" id="bazar-add-btn">＋ Nuevo bazar</button>
+          </div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Bazar</th><th>Fecha</th><th>Ubicación</th><th></th></tr></thead>
+            <tbody id="bazares-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================ ESTADÍSTICAS ============================ -->
+      <section class="page-section" id="page-estadisticas">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📊 Estadísticas</div>
+            <div class="section-sub">Resumen de tu inventario e ingresos.</div>
+          </div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat-card accent">
+            <div class="stat-card-label">En inventario</div>
+            <div class="stat-card-value" id="st-inventario">0</div>
+            <div class="stat-card-sub">piezas disponibles</div>
+          </div>
+          <div class="stat-card success">
+            <div class="stat-card-label">Vendidos</div>
+            <div class="stat-card-value" id="st-vendidos">0</div>
+            <div class="stat-card-sub">piezas vendidas</div>
+          </div>
+          <div class="stat-card violet">
+            <div class="stat-card-label">Ingresos totales</div>
+            <div class="stat-card-value" id="st-ingresos">$0.00</div>
+            <div class="stat-card-sub">ventas + extras</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-card-label">Ganancia estimada</div>
+            <div class="stat-card-value" id="st-ganancia">$0.00</div>
+            <div class="stat-card-sub">ingresos − costo de compra</div>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3>Ingresos por mes</h3>
+            <canvas id="chart-ingresos" class="chart-canvas"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Inventario vs. Vendido vs. Agotado</h3>
+            <canvas id="chart-estado" class="chart-canvas"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Pines vs. Stickers vendidos</h3>
+            <canvas id="chart-tipo" class="chart-canvas"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ AJUSTES DE COSTOS ============================ -->
+      <section class="page-section" id="page-ajustes">
+        <div class="section-header">
+          <div>
+            <div class="section-title">⚙️ Ajustes de costos</div>
+            <div class="section-sub">Valores por defecto que se usan para prellenar el cotizador y tus productos nuevos.</div>
+          </div>
+        </div>
+        <div class="quote-meta-card" style="max-width:640px;">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Costo base de un Pin</label>
+              <input type="number" class="form-input" id="cfg-costo-pin" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Costo base de un Sticker</label>
+              <input type="number" class="form-input" id="cfg-costo-sticker" min="0" step="0.01">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Costo de empaque (por pedido)</label>
+              <input type="number" class="form-input" id="cfg-empaque" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Comisión de bazar (%)</label>
+              <input type="number" class="form-input" id="cfg-comision" min="0" max="100" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Margen de ganancia sugerido (%)</label>
+              <input type="number" class="form-input" id="cfg-margen" min="0" step="1">
+            </div>
+          </div>
+          <button class="btn-primary" id="cfg-save-btn">💾 Guardar ajustes</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- ============================ MODAL: PRODUCTO (editar) ============================ -->
+<div class="modal-overlay" id="product-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="pm-title">Editar producto</span>
+      <button class="modal-close" data-close-modal="product-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nombre del producto</label>
+          <input type="text" class="form-input" id="pm-nombre">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Etiqueta / Categoría</label>
+          <select class="form-select" id="pm-etiqueta"></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Color</label>
+        <div class="color-swatch-picker" id="pm-color-picker"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Cantidad en stock</label>
+          <input type="number" class="form-input" id="pm-cantidad" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Costo de compra (unit.)</label>
+          <input type="number" class="form-input" id="pm-costo" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Precio de venta</label>
+          <input type="number" class="form-input" id="pm-precio" min="0" step="0.01">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Día de compra</label>
+          <input type="date" class="form-input" id="pm-fecha-compra">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Estado</label>
+          <select class="form-select" id="pm-estado">
+            <option value="inventario">En inventario</option>
+            <option value="vendido">Vendido</option>
+            <option value="agotado">Agotado / descontinuado</option>
+          </select>
+        </div>
+      </div>
+      <div id="pm-venta-fields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Fecha de venta</label>
+            <input type="date" class="form-input" id="pm-fecha-venta">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Bazar donde se vendió</label>
+            <select class="form-select" id="pm-bazar-venta"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ingresos extra</label>
+            <input type="number" class="form-input" id="pm-ingreso-extra" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notas</label>
+        <textarea class="form-textarea" id="pm-notas"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="pm-delete-btn">🗑️ Eliminar</button>
+      <button class="btn-secondary" data-close-modal="product-modal">Cancelar</button>
+      <button class="btn-primary" id="pm-save-btn">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ MODAL: BAZAR ============================ -->
+<div class="modal-overlay" id="bazar-modal">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <span class="modal-title" id="bm-title">Nuevo bazar</span>
+      <button class="modal-close" data-close-modal="bazar-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre del bazar</label>
+        <input type="text" class="form-input" id="bm-nombre">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha</label>
+        <input type="date" class="form-input" id="bm-fecha">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ubicación</label>
+        <input type="text" class="form-input" id="bm-ubicacion">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close-modal="bazar-modal">Cancelar</button>
+      <button class="btn-primary" id="bm-save-btn">Guardar bazar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ MODAL: CONFIRMAR ============================ -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <span class="modal-title">¿Estás seguro?</span>
+      <button class="modal-close" data-close-modal="confirm-modal">✕</button>
+    </div>
+    <div class="modal-body"><p id="confirm-text">Esta acción no se puede deshacer.</p></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close-modal="confirm-modal">Cancelar</button>
+      <button class="btn-danger" id="confirm-ok-btn">Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
